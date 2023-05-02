@@ -1,19 +1,17 @@
-use std::{path::PathBuf, io::{BufReader, Error, ErrorKind}, sync::Arc};
+use std::{path::PathBuf, io::{Error, ErrorKind}, sync::Arc};
 
 use chrono::Duration;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt};
 use quick_xml::events::Event;
 use serde::Serialize;
 use sqlx::SqlitePool;
-use tantivy::{directory::MmapDirectory, schema::{Schema, self, Field}, Index, collector::{Collector, self}, Document, TantivyError, query::{QueryParser, RangeQuery}};
-use tokio::{fs::OpenOptions, io::{AsyncWriteExt, AsyncBufRead}, sync::Semaphore};
+use tantivy::{directory::MmapDirectory, schema::{Schema, self, Field}, Index, collector::{self}, Document, TantivyError, query::{QueryParser, RangeQuery}};
+use tokio::{sync::Semaphore};
 use tokio_util::{io::StreamReader};
 
 use crate::data::PersistData;
 
 pub struct AnimeDb {
-	save_path : PathBuf,
-
 	idf : Field,
 	txf : Field,
 
@@ -24,7 +22,7 @@ pub struct AnimeDb {
 
 impl AnimeDb {
 	pub fn new(save_path : PathBuf) -> Self {
-		std::fs::create_dir_all(save_path.join("anime_db"));
+		let _ = std::fs::create_dir_all(save_path.join("anime_db"));
 		let tdir = MmapDirectory::open(save_path.join("anime_db")).unwrap();
 
 		// schema
@@ -42,7 +40,6 @@ impl AnimeDb {
 		// return
 
 		AnimeDb {
-			save_path,
 			idf,
 			txf,
 			index,
@@ -67,8 +64,8 @@ impl AnimeDb {
 	}
 	pub fn search(&self, query: &str) ->  Result<Vec<SearchResult>,TantivyError> {
 		let srch  = self.reader.searcher();
-		let queryb = QueryParser::for_index(&self.index, vec![self.txf.clone()]);
-		let qq = queryb.parse_query(&query).unwrap();
+		let queryb = QueryParser::for_index(&self.index, vec![self.txf]);
+		let qq = queryb.parse_query(query).unwrap();
 		let mut res = Vec::new();
 		for (score,doc) in srch.search(&qq, &collector::TopDocs::with_limit(10))? {
 			let doc = srch.doc(doc)?;
@@ -277,7 +274,7 @@ impl AnimeDb {
 							current_entry.title = text.to_string();
 							if current_entry.id != 0 {
 
-								self.save_entry(&current_entry); // literally do not care if it fails
+								let _ = self.save_entry(&current_entry).is_ok(); // literally do not care if it fails
 							}
                         },
                         quick_xml::events::Event::Eof => {

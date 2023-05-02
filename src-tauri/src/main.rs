@@ -1,8 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use embayro::{EmbayroState, data::PersistData, anidb::{AnimeDb, SearchResult, AnimeEntry}, EmbayroInit};
-use sqlx::{Sqlite, Executor};
+use embayro::{EmbayroState, data::PersistData, anidb::{SearchResult, AnimeEntry}, EmbayroInit};
 use tauri::{AppHandle, State, Manager, RunEvent};
 
 #[tauri::command]
@@ -50,7 +49,7 @@ fn search_id(q:u64,es : State<'_,EmbayroState>) -> Result<Vec<AnimeEntry>,()> {
 } 
 #[tauri::command(async)]
 async fn lookup_id(q:u32,es : State<'_,EmbayroState>) -> Result<tvmaze_api::responses::show::ShowData,()> {
-	let mut db = {
+	let db = {
 
 		let Some(emi) = &es.read().lazy_init else {
 			return Err(())

@@ -24,7 +24,7 @@ impl EmbayroInit {
 		
 		// init anidb
 		let mut anidb = anidb::AnimeDb::new(save_location.clone());
-		anidb.init(&persist,db_pool.clone()).await;
+		anidb.init(&persist,db_pool.clone()).await.unwrap();
 
 		EmbayroInit {
 			persist,
