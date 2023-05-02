@@ -180,17 +180,13 @@ impl AnimeDb {
 					read_text = false;
 				}
 				Event::End(bs) => {
-					match bs.name().as_ref() {
-						b"anime" => {
-							if this_entry.aid == 0 {
-								continue;
-							}
-							futurev.push(Self::push_entry(db.clone(), this_entry.clone(),sema.clone()));
-							this_entry = MasterEntry::default();
-						}
-						_=>{}
-					}
-				}
+					if let b"anime" = bs.name().as_ref() {
+								if this_entry.aid == 0 {
+									continue;
+								}
+								futurev.push(Self::push_entry(db.clone(), this_entry.clone(),sema.clone()));
+								this_entry = MasterEntry::default();
+							}				}
 				Event::Eof => {
 					break;
 				}

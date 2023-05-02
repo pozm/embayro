@@ -81,7 +81,7 @@ impl ListPage {
 
 			let cate = child.select(&cate_selector).next().unwrap().value().attr("title").unwrap();
 			let name = child.select(&name_selector).next().unwrap().value().attr("title").unwrap();
-			let id = child.select(&name_selector).next().unwrap().value().attr("href").unwrap().rsplit_once("/").unwrap().1.parse().unwrap();
+			let id = child.select(&name_selector).next().unwrap().value().attr("href").unwrap().rsplit_once('/').unwrap().1.parse().unwrap();
 			let download_link = child.select(&downl_selector).next().unwrap().value().attr("href").unwrap();
 			let magnet_link = child.select(&magnet_selector).next().unwrap().value().attr("href").unwrap();
 			let size = child.select(&size_selector).next().unwrap().text().next().unwrap();
