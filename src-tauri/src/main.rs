@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use embayro::{EmbayroState, data::PersistData, anidb::{AnimeDb, SearchResult, AnimeEntry}, EmbayroInit};
-use sqlx::Sqlite;
+use sqlx::{Sqlite, Executor};
 use tauri::{AppHandle, State, Manager, RunEvent};
 
 #[tauri::command]
@@ -49,16 +49,29 @@ fn search_id(q:u64,es : State<'_,EmbayroState>) -> Result<Vec<AnimeEntry>,()> {
 	db.anidb.get_id(q).map_err(|_|())
 } 
 #[tauri::command(async)]
-fn lookup_id(q:u64,es : State<'_,EmbayroState>) -> Result<Vec<tvmaze_api::responses::show::ShowData>,()> {
-	let tvm = &es.read().tvmaze;
-	// tvmaze.lookup_show(tvmaze_api::ShowLookup::)
-	Err(())
+async fn lookup_id(q:u32,es : State<'_,EmbayroState>) -> Result<tvmaze_api::responses::show::ShowData,()> {
+	let mut db = {
+
+		let Some(emi) = &es.read().lazy_init else {
+			return Err(())
+		};
+		emi.db_pool.clone()
+	};
+	let mut db = db.acquire().await.unwrap();
+	let tvm = es.read().tvmaze.clone();
+	let res = sqlx::query!("SELECT tvbid FROM animelist WHERE anidb_id = ?",q).fetch_one(&mut db).await.or(Err(()))?;
+	let tvbid = res.tvbid.unwrap() as u32;
+
+
+
+	let res= tvm.lookup_show(tvmaze_api::ShowLookup::TVDB(tvbid)).await.map_err(|_|())?;
+	Ok(res.get_data())
 } 
 fn main() { 
 
     tauri::Builder::default()
         .manage(EmbayroState::default())
-        .invoke_handler(tauri::generate_handler![get_data,save_data,init,search,search_id])
+        .invoke_handler(tauri::generate_handler![get_data,save_data,init,search,search_id,lookup_id])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
 		.run(|ah,e| {

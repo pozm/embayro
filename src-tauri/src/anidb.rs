@@ -1,11 +1,12 @@
-use std::{path::PathBuf, io::{BufReader, Error, ErrorKind}};
+use std::{path::PathBuf, io::{BufReader, Error, ErrorKind}, sync::Arc};
 
 use chrono::Duration;
+use futures::{stream::FuturesUnordered, StreamExt};
+use quick_xml::events::Event;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use tantivy::{directory::MmapDirectory, schema::{Schema, self, Field}, Index, collector::{Collector, self}, Document, TantivyError, query::{QueryParser, RangeQuery}};
-use tokio::{fs::OpenOptions, io::{AsyncWriteExt, AsyncBufRead}};
-use tokio_stream::StreamExt;
+use tokio::{fs::OpenOptions, io::{AsyncWriteExt, AsyncBufRead}, sync::Semaphore};
 use tokio_util::{io::StreamReader};
 
 use crate::data::PersistData;
@@ -49,14 +50,19 @@ impl AnimeDb {
 			reader
 		}
 	}
-	pub async fn init(&mut self, perst: &PersistData) -> anyhow::Result<()> {
+	pub async fn init(&mut self, perst: &PersistData, db: SqlitePool) -> anyhow::Result<()> {
 
 
 		if *perst.get_last_pull() + Duration::days(1) > chrono::Utc::now() {
 			return Err(anyhow::anyhow!("already pulled today"));
 		}
 
-		self.fetch_new().await
+		let x = futures::future::join(self.fetch_master(db),self.fetch_new()).await;
+
+		self.indexw.commit()?;
+
+		x.0?;
+		x.1
 
 	}
 	pub fn search(&self, query: &str) ->  Result<Vec<SearchResult>,TantivyError> {
@@ -89,7 +95,7 @@ impl AnimeDb {
 		}
 		Ok(res)
 	}
-	pub fn save_entry(&mut self, entry : &AnimeEntry) -> anyhow::Result<u64> {
+	pub fn save_entry(&self, entry : &AnimeEntry) -> anyhow::Result<u64> {
 		// println!("saving entry {:?}", entry);
 		if entry.id == 0 {
 			println!("{}, {} = 0", entry.id, entry.title);
@@ -107,6 +113,8 @@ impl AnimeDb {
 		} else {
 			0
 		};
+
+		println!("master already has {count}");
 		
 
 		let xml_data = reqwest::get("https://raw.githubusercontent.com/Anime-Lists/anime-lists/master/anime-list.xml").await?.bytes_stream();
@@ -120,14 +128,94 @@ impl AnimeDb {
 		r.trim_text(true);
 
 		let mut buf = Vec::new();
-
+		let mut read_text = false;
+		let mut this_entry = MasterEntry::default();
+		let sema = Arc::new(Semaphore::new(7));
+		let mut futurev = Vec::new();
+		
 		loop {
-			r.read_event_into_async(&mut buf).await;
+			let Ok(ev) = r.read_event_into_async(&mut buf).await else {
+				continue;
+			};
+			match ev {
+				Event::Start(bs) => {
+					match bs.name().as_ref() {
+						b"anime" => {
+							let dec = r.decoder();
+							let Some(aid) = bs.attributes().flatten().find(|x| x.key.as_ref() == b"anidbid") else {
+								continue;
+							};
+							let Some(tvdbid) = bs.attributes().flatten().find(|x| x.key.as_ref() == b"tvdbid") else {
+								continue;
+							};
+							let imdbid = bs.attributes().flatten().find(|x| x.key.as_ref() == b"imdbid");
+							let default_tvdb_season = bs.attributes().flatten().find(|x| x.key.as_ref() == b"defaulttvdbseason");
+	
+
+
+							this_entry.aid = dec.decode(&aid.value).unwrap().parse().unwrap();
+
+							if this_entry.aid < count as u32 {
+								this_entry = MasterEntry::default();
+								continue;
+							}
+
+							let Ok(hold) = dec.decode(&tvdbid.value).unwrap().parse::<u32>() else {continue};
+							this_entry.tvdbid = hold;
+							this_entry.imdbid = imdbid.map(|x| dec.decode(&x.value).unwrap().parse().unwrap_or_default());
+							this_entry.defaulttvdbseason = default_tvdb_season.map(|x| dec.decode(&x.value).unwrap().parse().unwrap_or_default());
+
+						},
+						b"name" => {
+							read_text = true;
+						},
+						_=>{}
+					}
+				}
+				Event::Text(bs) => {
+					if !read_text {
+						continue;
+					}
+					let Ok(ues) = bs.unescape() else {
+						continue;
+					};
+					this_entry.series_title = ues.to_string();
+					read_text = false;
+				}
+				Event::End(bs) => {
+					match bs.name().as_ref() {
+						b"anime" => {
+							if this_entry.aid == 0 {
+								continue;
+							}
+							futurev.push(Self::push_entry(db.clone(), this_entry.clone(),sema.clone()));
+							this_entry = MasterEntry::default();
+						}
+						_=>{}
+					}
+				}
+				Event::Eof => {
+					break;
+				}
+				_=>{}
+			}
 		}
+		println!("waiting for {} futures",futurev.len());
+		futures::future::join_all(futurev).await;
+		println!("futures are done");
+		Ok(())
+	}
+
+	async fn push_entry(db: SqlitePool, entry: MasterEntry, sema: Arc<Semaphore>) -> anyhow::Result<()> {
+		let _b= sema.acquire().await.unwrap();
+		let mut db = db.acquire().await?;
+		let _result = sqlx::query!("INSERT INTO animelist (anidb_id, tvbid, series_title, def_tvdb_season, imdbid) VALUES (?,?,?,?,?);", entry.aid, entry.tvdbid, entry.series_title, entry.defaulttvdbseason, entry.imdbid)
+			.execute(&mut db).await?;
 
 		Ok(())
 	}
-	pub async fn fetch_new(&mut self) -> anyhow::Result<()> {
+
+	pub async fn fetch_new(&self) -> anyhow::Result<()> {
 		let xml_data = reqwest::get("https://raw.githubusercontent.com/Anime-Lists/anime-lists/master/animetitles.xml").await?.bytes_stream();
 		let x2 = xml_data.map(|x| {
 			match x {
@@ -205,9 +293,6 @@ impl AnimeDb {
             }
         }
 
-		println!("committing");
-		self.indexw.commit()?;
-
 		Ok(())
 	}
 	
@@ -223,4 +308,12 @@ pub struct AnimeEntry {
 pub struct SearchResult {
 	pub entry : AnimeEntry,
 	pub score : f32
+}
+#[derive(Default,Debug,Clone,Serialize)]
+pub struct MasterEntry {
+	aid: u32,
+	tvdbid: u32,
+	imdbid: Option<u32>,
+	series_title: String,
+	defaulttvdbseason: Option<u32>,
 }

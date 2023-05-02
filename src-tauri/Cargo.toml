@@ -27,6 +27,7 @@ scraper = "0.16.0"
 tvmaze-api = {path="../../../../rust/tvmaze-api"}
 tokio-stream = {version = "0.1.14"}
 tokio-util = {version = "0.7.8"}
+futures = "0.3.28"
 sqlx = {version = "0.6.3", features = ["runtime-tokio-rustls","sqlite","macros","chrono","migrate"] }
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

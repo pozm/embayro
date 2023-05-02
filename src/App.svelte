@@ -18,6 +18,7 @@
 
 
 	let results = null;
+	let selected_show_data = null;
 
 	function search(eq){
 		console.log("search",eq)
@@ -26,9 +27,18 @@
 			return r
 		})
 	}
+	function lookup_sel(x) {
+		iv2("lookup_id",{q:x}).then(x=>{
+			console.log("lookup",x)
+			selected_show_data = x;
+		})
+	}
 	let search_query = "kaguya-sama";
 	$: {
 		search(search_query)
+		if (selected != -1) {
+			lookup_sel(selected)
+		}
 	}
 	let hide_search = false;
 </script>
@@ -57,14 +67,31 @@
 						<hr class="border-neutral-800 last:hidden" />
 						{/each}
 					{/await}
-				</div>
-			{:else if selected != -1}
-
-				<p>selected {selected}</p>
-
+				</div>			
 			{/if}
-
+			
 		</div>
+		{#if selected_show_data}
+			<div class="w-full flex flex-row mt-5">
+				<div class="flex flex-[.2] flex-wrap" >
+					<img src="{selected_show_data.image.original}" class="rounded-xl" >
+
+				</div>
+				<div class="flex flex-[.8] flex-col ml-3" >
+					<h1 class="text-2xl" >{selected_show_data.name}</h1>
+					<h3 class="text-xl">About</h3>
+					{@html selected_show_data.summary}
+					<h3 class="text-xl">Status</h3>
+					<p>• {selected_show_data.status}</p>
+					<h3 class="text-xl">Genres</h3>
+					{#each selected_show_data.genres as genre}
+						<p> • {genre}</p>
+					{/each}
+				</div>
+				
+			</div>
+
+		{/if}
 
   	{:catch error}
 

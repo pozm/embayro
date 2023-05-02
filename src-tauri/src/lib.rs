@@ -15,7 +15,7 @@ pub struct EmbayroInit {
 impl EmbayroInit {
 	pub async fn new(save_location : PathBuf) -> Self {
 		// init db
-		let db_pool = sqlx::SqlitePool::connect(&format!("sqlite:{}/_.db",save_location.display())).await.unwrap();
+		let db_pool = sqlx::SqlitePool::connect(&format!("sqlite:{}/_.db?mode=rwc",save_location.display())).await.unwrap();
 		
 		sqlx::migrate!("../migrations").run(&db_pool).await.unwrap();
 		
@@ -24,7 +24,7 @@ impl EmbayroInit {
 		
 		// init anidb
 		let mut anidb = anidb::AnimeDb::new(save_location.clone());
-		anidb.init(&persist).await;
+		anidb.init(&persist,db_pool.clone()).await;
 
 		EmbayroInit {
 			persist,
