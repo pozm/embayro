@@ -1,12 +1,12 @@
-use std::{path::PathBuf, io::{Error, ErrorKind}, sync::Arc};
+use std::{path::PathBuf, io::{Error, ErrorKind}};
 
 use chrono::Duration;
 use futures::{StreamExt};
 use quick_xml::events::Event;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Acquire};
 use tantivy::{directory::MmapDirectory, schema::{Schema, self, Field}, Index, collector::{self}, Document, TantivyError, query::{QueryParser, RangeQuery}};
-use tokio::{sync::Semaphore};
+
 use tokio_util::{io::StreamReader};
 
 use crate::data::PersistData;
@@ -127,8 +127,11 @@ impl AnimeDb {
 		let mut buf = Vec::new();
 		let mut read_text = false;
 		let mut this_entry = MasterEntry::default();
-		let sema = Arc::new(Semaphore::new(7));
-		let mut futurev = Vec::new();
+		
+		let mut dbi = db.acquire().await?;
+		let mut dbt = dbi.begin().await?;
+
+		// let mut futurev = Vec::new();
 		
 		loop {
 			let Ok(ev) = r.read_event_into_async(&mut buf).await else {
@@ -184,7 +187,10 @@ impl AnimeDb {
 								if this_entry.aid == 0 {
 									continue;
 								}
-								futurev.push(Self::push_entry(db.clone(), this_entry.clone(),sema.clone()));
+								// futurev.push(Self::push_entry(db.clone(), this_entry.clone(),sema.clone()));
+								sqlx::query!("INSERT INTO animelist (anidb_id, tvbid, series_title, def_tvdb_season, imdbid) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING;", this_entry.aid, this_entry.tvdbid, this_entry.series_title, this_entry.defaulttvdbseason, this_entry.imdbid)
+									.execute(&mut dbt).await?;
+
 								this_entry = MasterEntry::default();
 							}				}
 				Event::Eof => {
@@ -193,18 +199,10 @@ impl AnimeDb {
 				_=>{}
 			}
 		}
-		println!("waiting for {} futures",futurev.len());
-		futures::future::join_all(futurev).await;
-		println!("futures are done");
-		Ok(())
-	}
-
-	async fn push_entry(db: SqlitePool, entry: MasterEntry, sema: Arc<Semaphore>) -> anyhow::Result<()> {
-		let _b= sema.acquire().await.unwrap();
-		let mut db = db.acquire().await?;
-		let _result = sqlx::query!("INSERT INTO animelist (anidb_id, tvbid, series_title, def_tvdb_season, imdbid) VALUES (?,?,?,?,?);", entry.aid, entry.tvdbid, entry.series_title, entry.defaulttvdbseason, entry.imdbid)
-			.execute(&mut db).await?;
-
+		// println!("waiting for {} futures",futurev.len());
+		// futures::future::join_all(futurev).await;
+		dbt.commit().await?;
+		println!("committed db");
 		Ok(())
 	}
 

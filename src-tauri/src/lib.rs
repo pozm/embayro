@@ -1,3 +1,4 @@
+pub mod memdata;
 mod nyaa;
 pub mod anidb;
 
@@ -14,6 +15,9 @@ pub struct EmbayroInit {
 }
 impl EmbayroInit {
 	pub async fn new(save_location : PathBuf) -> Self {
+
+		tokio::fs::create_dir_all(save_location.clone()).await.unwrap();
+
 		// init db
 		let db_pool = sqlx::SqlitePool::connect(&format!("sqlite:{}/_.db?mode=rwc",save_location.display())).await.unwrap();
 		
@@ -34,16 +38,17 @@ impl EmbayroInit {
 	}
 }
 pub struct EmbayroStateInner {
-	pub tvmaze : tvmaze_api::TvMazeClient,
+	pub tvmaze : tvmaze_api::client::TvMazeClient,
 	pub lazy_init : Option<EmbayroInit>,
+	pub mem_data : Option<memdata::MemData>,
 }
 impl Default for EmbayroStateInner {
     fn default() -> Self {
-		let cacher = tvmaze_api::cacher::InMemoryCacher::new(None);
-		let tvmaze = tvmaze_api::TvMazeClient::new(Box::new(cacher));
+		let tvmaze = tvmaze_api::client::TvMazeClient::default();
         EmbayroStateInner {
 			tvmaze,
 			lazy_init : None,
+			mem_data : None,
         }
     }
 }

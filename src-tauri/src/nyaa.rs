@@ -130,6 +130,10 @@ mod tests {
 			client : reqwest::Client::new()
 		};
 		let list = rt.block_on(super::ListPage::new_search("one piece", &client));
+		println!("found the following:");
+		for anime in list.animes.iter() {
+			println!("{} - {}", anime.name, anime.category);
+		}
 		assert!(!list.animes.is_empty())
 	}
 }

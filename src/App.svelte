@@ -7,6 +7,7 @@
 	import { iv2, ready } from "./lib/com";
 
 	let selected = -1;
+	let selected_q = "";
 
 	onMount(async () => {
 		await ready;
@@ -27,10 +28,13 @@
 			return r
 		})
 	}
-	function lookup_sel(x) {
-		iv2("lookup_id",{q:x}).then(x=>{
+	async function lookup_sel(x) {
+		await iv2("set_selected",{id:x,query:selected_q}).catch(e=>{console.log(e)})
+		await iv2("lookup_selected",{}).then(x=>{
 			console.log("lookup",x)
 			selected_show_data = x;
+		},e=>{
+			console.log(e)
 		})
 	}
 	let search_query = "kaguya-sama";
@@ -44,7 +48,7 @@
 </script>
 
 <main class="p-6 text-neutral-300">
-  <h1 class="text-white text-3xl pb-2" >Embayro</h1>
+  <h1 class="text-white text-3xl pb-2 relative" >Embayro</h1>
   {#await ready}
 	
 	initalizing
@@ -56,12 +60,12 @@
 				placeholder="Search for an anime.." bind:value={search_query} on:focus={e=>{selected = -1; hide_search=false}} on:blur={e=>{setTimeout(()=>{hide_search=true},200);}}
 			/>
 			{#if results && !hide_search && selected == -1}
-				<div transition:slide="{{delay:0, easing:eases.cubicInOut}}" class="bg-neutral-900 mt-2 rounded-xl w-96 shadow-2xl p-2 h-80 overflow-y-scroll scrollable" >
+				<div transition:slide="{{delay:0, easing:eases.cubicInOut}}" class="bg-neutral-900 mt-2 rounded-xl w-96 shadow-2xl p-2 h-80 overflow-y-scroll scrollable absolute" >
 
 					{#await results then r}
 
 						{#each r as ani}
-						<div class="py-3 w-full hover:cursor-pointer transition-colors hover:text-pink-300" on:click={e=>{selected = ani.entry.id}} >
+						<div class="py-3 w-full hover:cursor-pointer transition-colors hover:text-pink-300" on:click={e=>{selected = ani.entry.id; selected_q= ani.entry.title}} >
 							<p>{ani.entry.title}</p>
 						</div>
 						<hr class="border-neutral-800 last:hidden" />
@@ -74,7 +78,7 @@
 		{#if selected_show_data}
 			<div class="w-full flex flex-row mt-5">
 				<div class="flex flex-[.2] flex-wrap" >
-					<img src="{selected_show_data.image.original}" class="rounded-xl" >
+					<img width="64" src="{selected_show_data.image.original}" alt="{selected_show_data.name}" class="rounded-xl w-full aspect-auto object-cover max-w-sm" >
 
 				</div>
 				<div class="flex flex-[.8] flex-col ml-3" >
